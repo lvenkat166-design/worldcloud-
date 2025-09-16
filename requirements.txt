@@ -2,3 +2,4 @@ wordcloud
 matplotlib
 pdfplumber
 python-docx
+seaborn
