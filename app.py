@@ -1,96 +1,86 @@
 import streamlit as st
 from wordcloud import WordCloud, STOPWORDS
 import matplotlib.pyplot as plt
-import PyPDF2
-from docx import Document
+import pdfplumber
 import io
-from langdetect import detect
 from collections import Counter
 import pandas as pd
 
-# --- Text Extraction ---
+# --- Text Extraction with pdfplumber ---
 def extract_text_from_pdf(file_bytes):
     try:
-        reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
-        return " ".join([page.extract_text() or "" for page in reader.pages])
+        with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
+            return " ".join([page.extract_text() or "" for page in pdf.pages])
     except Exception as e:
         st.error(f"PDF error: {e}")
         return ""
 
-def extract_text_from_docx(file_bytes):
-    try:
-        doc = Document(io.BytesIO(file_bytes))
-        return "\n".join([para.text for para in doc.paragraphs])
-    except Exception as e:
-        st.error(f"DOCX error: {e}")
-        return ""
+# --- Word Frequency Analysis ---
+def get_word_frequencies(text, extra_stopwords):
+    all_stopwords = STOPWORDS.union(set(extra_stopwords.split()))
+    words = [word.lower() for word in text.split() if word.lower() not in all_stopwords]
+    return Counter(words)
 
 # --- Word Cloud Generator ---
-def generate_word_cloud(text, max_words, bg_color, width, height, extra_stopwords):
-    all_stopwords = STOPWORDS.union(set(extra_stopwords.split()))
+def show_word_cloud(freq, width, height, bg_color):
     wc = WordCloud(
         width=width,
         height=height,
         background_color=bg_color,
-        stopwords=all_stopwords,
+        stopwords=STOPWORDS,
         collocations=False
-    ).generate(text)
+    ).generate_from_frequencies(freq)
 
     fig, ax = plt.subplots()
     ax.imshow(wc, interpolation='bilinear')
     ax.axis("off")
     st.pyplot(fig)
 
-    # Show word frequency table
-    words = [word for word in text.lower().split() if word not in all_stopwords]
-    freq = Counter(words)
-    df = pd.DataFrame(freq.most_common(20), columns=["Word", "Frequency"])
-    st.dataframe(df)
+# --- Bar Chart ---
+def show_bar_chart(freq):
+    df = pd.DataFrame(freq.most_common(10), columns=["Word", "Frequency"])
+    st.subheader("📊 Top Words - Bar Chart")
+    st.bar_chart(df.set_index("Word"))
+
+# --- Pie Chart ---
+def show_pie_chart(freq):
+    df = pd.DataFrame(freq.most_common(10), columns=["Word", "Frequency"])
+    fig, ax = plt.subplots()
+    ax.pie(df["Frequency"], labels=df["Word"], autopct="%1.1f%%", startangle=140)
+    ax.axis("equal")
+    st.subheader("🥧 Top Words - Pie Chart")
+    st.pyplot(fig)
 
 # --- Main App ---
 def main():
-    st.set_page_config(page_title="Unique Word Cloud App", layout="wide")
-    st.title("🧠 Unique Word Cloud Generator")
+    st.set_page_config(page_title="Word Cloud & Charts", layout="wide")
+    st.title("☁ Word Cloud + Charts from PDF")
 
-    col1, col2 = st.columns([1, 2])
+    uploaded_file = st.file_uploader("Upload PDF file", type=["pdf"])
+    if uploaded_file:
+        file_bytes = uploaded_file.getvalue()
+        raw_text = extract_text_from_pdf(file_bytes)
 
-    with col1:
-        input_mode = st.radio("Choose input mode:", ["Upload File", "Type Text"])
-        uploaded_file = None
-        raw_text = ""
-
-        if input_mode == "Upload File":
-            uploaded_file = st.file_uploader("Upload PDF or DOCX", type=["pdf", "docx"])
-            if uploaded_file:
-                file_bytes = uploaded_file.getvalue()
-                if uploaded_file.type == "application/pdf":
-                    raw_text = extract_text_from_pdf(file_bytes)
-                elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-                    raw_text = extract_text_from_docx(file_bytes)
-        else:
-            raw_text = st.text_area("Enter your text here:", height=200)
-
-        if raw_text:
-            try:
-                lang = detect(raw_text)
-                st.markdown(f"🌐 Detected Language: *{lang.upper()}*")
-            except:
-                st.warning("Could not detect language.")
-
-        st.subheader("🔧 Word Cloud Settings")
-        max_words = st.slider("Max words", 50, 500, 150)
-        bg_color = st.selectbox("Background color", ["white", "black", "lightblue", "lightgrey"])
-        width = st.slider("Width", 300, 1000, 800)
-        height = st.slider("Height", 300, 800, 400)
-        extra_stopwords = st.text_input("Add custom stopwords (space-separated):", "")
-
-    with col2:
         if raw_text.strip():
-            st.subheader("☁ Generated Word Cloud")
-            generate_word_cloud(raw_text, max_words, bg_color, width, height, extra_stopwords)
-        else:
-            st.info("Please upload a file or enter some text to begin.")
+            st.subheader("🔧 Settings")
+            max_words = st.slider("Max words", 50, 500, 150)
+            bg_color = st.selectbox("Background color", ["white", "black", "lightblue", "lightgrey"])
+            width = st.slider("Width", 300, 1000, 800)
+            height = st.slider("Height", 300, 800, 400)
+            extra_stopwords = st.text_input("Add custom stopwords (space-separated):", "")
 
-# ✅ Correct main entry point
+            freq = get_word_frequencies(raw_text, extra_stopwords)
+
+            st.subheader("☁ Word Cloud")
+            show_word_cloud(freq, width, height, bg_color)
+
+            show_bar_chart(freq)
+            show_pie_chart(freq)
+        else:
+            st.warning("No text found in the PDF.")
+    else:
+        st.info("Please upload a PDF file to begin.")
+
+# ✅ Entry Point
 if __name__ == "__main__":
     main()
