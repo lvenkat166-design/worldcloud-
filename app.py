@@ -2,11 +2,12 @@ import streamlit as st
 from wordcloud import WordCloud, STOPWORDS
 import matplotlib.pyplot as plt
 import pdfplumber
+from docx import Document
 import io
 from collections import Counter
 import pandas as pd
 
-# --- Text Extraction with pdfplumber ---
+# --- Text Extraction ---
 def extract_text_from_pdf(file_bytes):
     try:
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
@@ -15,13 +16,21 @@ def extract_text_from_pdf(file_bytes):
         st.error(f"PDF error: {e}")
         return ""
 
+def extract_text_from_docx(file_bytes):
+    try:
+        doc = Document(io.BytesIO(file_bytes))
+        return "\n".join([para.text for para in doc.paragraphs])
+    except Exception as e:
+        st.error(f"DOCX error: {e}")
+        return ""
+
 # --- Word Frequency Analysis ---
 def get_word_frequencies(text, extra_stopwords):
     all_stopwords = STOPWORDS.union(set(extra_stopwords.split()))
     words = [word.lower() for word in text.split() if word.lower() not in all_stopwords]
     return Counter(words)
 
-# --- Word Cloud Generator ---
+# --- Word Cloud ---
 def show_word_cloud(freq, width, height, bg_color):
     wc = WordCloud(
         width=width,
@@ -54,12 +63,17 @@ def show_pie_chart(freq):
 # --- Main App ---
 def main():
     st.set_page_config(page_title="Word Cloud & Charts", layout="wide")
-    st.title("☁ Word Cloud + Charts from PDF")
+    st.title("📄 Word Cloud + Charts from PDF or DOCX")
 
-    uploaded_file = st.file_uploader("Upload PDF file", type=["pdf"])
+    uploaded_file = st.file_uploader("Upload PDF or DOCX file", type=["pdf", "docx"])
     if uploaded_file:
         file_bytes = uploaded_file.getvalue()
-        raw_text = extract_text_from_pdf(file_bytes)
+        raw_text = ""
+
+        if uploaded_file.type == "application/pdf":
+            raw_text = extract_text_from_pdf(file_bytes)
+        elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            raw_text = extract_text_from_docx(file_bytes)
 
         if raw_text.strip():
             st.subheader("🔧 Settings")
@@ -77,9 +91,9 @@ def main():
             show_bar_chart(freq)
             show_pie_chart(freq)
         else:
-            st.warning("No text found in the PDF.")
+            st.warning("No text found in the file.")
     else:
-        st.info("Please upload a PDF file to begin.")
+        st.info("Please upload a PDF or DOCX file to begin.")
 
 # ✅ Entry Point
 if __name__ == "__main__":
